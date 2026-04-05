@@ -7,6 +7,8 @@ use clap::Parser;
 use config::Config;
 use std::path::PathBuf;
 use tracing::{info, error};
+use walkdir::WalkDir;
+use std::fs;
 
 #[derive(Parser)]
 #[command(name = "rustmediacenter", about = "Rust Media Center - Organized symlinks from rclone mount")]
@@ -60,7 +62,83 @@ async fn main() -> Result<(), error::AppError> {
         dry_run: cli.dry_run,
     };
 
-    scan::scan_directory(&config.source.to_string_lossy());
+    if !config.source.exists() {
+        error!("Source path does not exist: {:?}. Is rclone mounted?", config.source);
+        std::process::exit(1);
+    }else if !config.output.exists() {
+        error!("Output path does not exist: {:?}. Please create it before running.", config.output);
+        std::process::exit(1);
+    }
+    /*else if !config.tmdb_api_key.is_empty() {
+        error!("TMDb API key is required. Please set it via --tmdb-api-key or TMDB_API_KEY environment variable.");
+        std::process::exit(1);
+    }else if !config.tvdb_api_key.is_empty() {
+        error!("TVDB API key is required. Please set it via --tvdb-api-key or TVDB_API_KEY environment variable.");
+        std::process::exit(1);
+    }*/
+
+    //Creation des dossiers
+    let movies_dir = config.output.join("movies");
+    let series_dir = config.output.join("series");
+
+    if !movies_dir.exists() || !series_dir.exists() {
+        fs::create_dir_all(&movies_dir)?;
+        fs::create_dir_all(&series_dir)?;
+    }
+
+    println!("RustTMC starting");
+    println!("Source: {:?}", config.source);
+    println!("Output: {:?}", config.output);
+    println!("Scan interval: {}s (0 = once)", config.scan_interval);
+    println!("Dry run: {}", config.dry_run);
+
+
+    
+    for entry in WalkDir::new(&config.source).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            let file_name = entry.file_name().to_string_lossy();
+            let result = scan::scan_directory(&file_name);
+
+            if result.type_id != None {
+                let title = result.title.clone().unwrap_or("Unknown".to_string());
+                let season = result.season.unwrap_or(0);
+                let episode = result.episode.unwrap_or(0);
+                let type_id = result.type_id.clone().unwrap_or("Unknown".to_string());
+
+                println!("File: {}", file_name);
+                println!("Title: {:?}", title);
+                println!("Season: {:?}", season);
+                println!("Episode: {:?}", episode);
+                println!("Type ID: {:?}", type_id);
+
+                if type_id == "Movie" {
+                    //Créer dossier fime et faire le lien symbolique
+                    let movie_dir = movies_dir.join(title);
+                    if !movie_dir.exists() {
+                        fs::create_dir_all(&movie_dir)?;
+                    }
+                    //std::os::unix::fs::symlink(original, link)?;
+                
+                } else if type_id == "TV Show" {
+                    //Créer dossier série, saison et faire le lien symbolique
+                    let show_dir = series_dir.join(title);
+                    let season_dir = show_dir.join(format!("Season {}", season));
+                    if !season_dir.exists() {
+                        fs::create_dir_all(&season_dir)?;   
+                    }
+
+
+                }
+
+            }
+
+            
+
+        }
+    }
+
+    
+    
     // ... ta logique ici
 
 
