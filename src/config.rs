@@ -7,5 +7,5 @@ pub struct Config {
     pub tvdb_api_key: String,
     pub scan_interval: u64,
     pub cache_db: PathBuf,
-    pub dry_run: bool,
+    pub remove_old_links: bool,
 }

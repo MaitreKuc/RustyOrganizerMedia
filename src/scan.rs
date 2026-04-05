@@ -11,12 +11,14 @@
 
 
 use hunch::hunch;
+use walkdir::WalkDir;
 
 pub struct ScanResult {
     pub title: Option<String>,
     pub season: Option<i32>,
     pub episode: Option<i32>,
     pub type_id: Option<String>,
+    pub year: Option<i32>,
 }
 
 /// Video file extensions we care about
@@ -34,11 +36,13 @@ pub fn scan_directory(file_name: &str) -> ScanResult {
             season: None,
             episode: None,
             type_id: None,
+            year: None,
         };
     }
 
     let season = result.season();
     let episode = result.episode();
+    let year = result.year();
 
     let type_id = if season.unwrap_or(0) > 0 || episode.unwrap_or(0) > 0 {
         Some("TV Show".to_string())
@@ -50,6 +54,30 @@ pub fn scan_directory(file_name: &str) -> ScanResult {
         title: result.title().map(|t| t.to_string()),
         season,
         episode,
+        year,
         type_id,
     }
+}
+
+// Supprime les liens symboliques qui ne pointent plus vers des fichiers valides
+pub fn remove_old_links(dir: &std::path::Path) -> std::io::Result<()> {
+    for entry in WalkDir::new(dir)
+        .follow_links(false) // IMPORTANT
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {        
+        let path = entry.path();
+        if path.is_symlink() {
+            println!("Checking symbolic link: {:?}", path);
+            if let Ok(target) = std::fs::read_link(path) {
+                if !target.exists() {
+                    println!("Removing broken symbolic link: {:?}", path);
+                    std::fs::remove_file(path)?;
+                }
+            } else {
+                println!("Failed to read symbolic link: {:?}", path);
+            }
+        }
+    }
+    Ok(())
 }

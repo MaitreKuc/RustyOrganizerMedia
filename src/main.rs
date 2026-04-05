@@ -41,9 +41,9 @@ struct Cli {
     #[arg(long, env = "LOG_LEVEL", default_value = "info")]
     log_level: String,
 
-    /// Dry run mode - show what would be done without creating symlinks
-    #[arg(long, default_value = "false")]
-    dry_run: bool,
+    /// Remove old symbolic links that no longer point to valid files
+    #[arg(long, env = "REMOVE_OLD_LINKS", default_value_t = false)]
+    remove_old_links: bool,
 }
 
 #[tokio::main]
@@ -59,14 +59,19 @@ async fn main() -> Result<(), error::AppError> {
         tvdb_api_key: cli.tvdb_api_key,
         scan_interval: cli.scan_interval,
         cache_db: cli.cache_db,
-        dry_run: cli.dry_run,
+        remove_old_links: cli.remove_old_links,
     };
+
+    
 
     if !config.source.exists() {
         error!("Source path does not exist: {:?}. Is rclone mounted?", config.source);
         std::process::exit(1);
     }else if !config.output.exists() {
         error!("Output path does not exist: {:?}. Please create it before running.", config.output);
+        std::process::exit(1);
+    }else if !config.remove_old_links {
+        error!("Remove old links flag is required. Please set it via --remove-old-links or REMOVE_OLD_LINKS environment variable.");
         std::process::exit(1);
     }
     /*else if !config.tmdb_api_key.is_empty() {
@@ -90,13 +95,24 @@ async fn main() -> Result<(), error::AppError> {
     println!("Source: {:?}", config.source);
     println!("Output: {:?}", config.output);
     println!("Scan interval: {}s (0 = once)", config.scan_interval);
-    println!("Dry run: {}", config.dry_run);
+
+
+    if config.remove_old_links {
+        println!("Removing old symbolic links...");
+        for entry in WalkDir::new(&config.output).into_iter().filter_map(|e| e.ok()) {
+            scan::remove_old_links(&movies_dir)?;
+            scan::remove_old_links(&series_dir)?;
+        }
+        
+        
+    }
 
 
     
     for entry in WalkDir::new(&config.source).into_iter().filter_map(|e| e.ok()) {
         if entry.file_type().is_file() {
-            let file_name = entry.file_name().to_string_lossy();
+            let path = entry.path();
+            let file_name = path.file_name().unwrap().to_string_lossy();    
             let result = scan::scan_directory(&file_name);
 
             if result.type_id != None {
@@ -104,29 +120,50 @@ async fn main() -> Result<(), error::AppError> {
                 let season = result.season.unwrap_or(0);
                 let episode = result.episode.unwrap_or(0);
                 let type_id = result.type_id.clone().unwrap_or("Unknown".to_string());
+                let year = result.year.unwrap_or(0);
 
-                println!("File: {}", file_name);
-                println!("Title: {:?}", title);
-                println!("Season: {:?}", season);
-                println!("Episode: {:?}", episode);
-                println!("Type ID: {:?}", type_id);
+                
 
                 if type_id == "Movie" {
                     //Créer dossier fime et faire le lien symbolique
-                    let movie_dir = movies_dir.join(title);
+                    let movie_dir = movies_dir.join(&title);
                     if !movie_dir.exists() {
                         fs::create_dir_all(&movie_dir)?;
                     }
-                    //std::os::unix::fs::symlink(original, link)?;
+
+                    let original_path = path;
+                    let link_path = movie_dir.join(&*file_name);
+                    if !link_path.exists() {
+                        println!("File: {}", file_name);
+                        println!("Title: {:?}", &title);
+                        println!("Season: {:?}", &season);
+                        println!("Episode: {:?}", &episode);
+                        println!("Type ID: {:?}", &type_id);
+                        println!("Year: {:?}", &year);
+
+                        std::os::unix::fs::symlink(&original_path, &link_path)?;
+                    }
+                    
                 
                 } else if type_id == "TV Show" {
                     //Créer dossier série, saison et faire le lien symbolique
-                    let show_dir = series_dir.join(title);
+                    let show_dir = series_dir.join(&title);
                     let season_dir = show_dir.join(format!("Season {}", season));
                     if !season_dir.exists() {
                         fs::create_dir_all(&season_dir)?;   
                     }
 
+                    let original_path = path;
+                    let link_path = season_dir.join(&*file_name);
+                    if !link_path.exists() {
+                        println!("File: {}", file_name);
+                        println!("Title: {:?}", &title);
+                        println!("Season: {:?}", &season);
+                        println!("Episode: {:?}", &episode);
+                        println!("Type ID: {:?}", &type_id);
+                        println!("Year: {:?}", &year);
+                        std::os::unix::fs::symlink(&original_path, &link_path)?;
+                    }
 
                 }
 
