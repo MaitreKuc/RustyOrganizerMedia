@@ -1,6 +1,7 @@
 mod error;
 mod scan;
 mod config;
+mod search;
 // ...les autres mod
 
 use clap::Parser;
@@ -146,38 +147,31 @@ async fn main() -> Result<(), error::AppError> {
                     
                 
                 } else if type_id == "TV Show" {
-                    //Créer dossier série, saison et faire le lien symbolique
-                    let show_dir = series_dir.join(&title);
+                    // Nom du dossier série avec année
+                    let show_dir = series_dir.join(format!("{}", title));
+
                     let season_dir = show_dir.join(format!("Season {}", season));
+
                     if !season_dir.exists() {
-                        fs::create_dir_all(&season_dir)?;   
+                        fs::create_dir_all(&season_dir)?;
                     }
 
                     let original_path = path;
                     let link_path = season_dir.join(&*file_name);
+
                     if !link_path.exists() {
                         println!("File: {}", file_name);
-                        println!("Title: {:?}", &title);
-                        println!("Season: {:?}", &season);
-                        println!("Episode: {:?}", &episode);
-                        println!("Type ID: {:?}", &type_id);
-                        println!("Year: {:?}", &year);
+                        println!("Title: {:?}", title);
+                        println!("Season: {:?}", season);
+                        println!("Episode: {:?}", episode);
+                        println!("Type ID: {:?}", type_id);
+                        println!("Year: {:?}", year);
+
                         std::os::unix::fs::symlink(&original_path, &link_path)?;
                     }
-
                 }
-
             }
-
-            
-
         }
     }
-
-    
-    
-    // ... ta logique ici
-
-
     Ok(())
 }

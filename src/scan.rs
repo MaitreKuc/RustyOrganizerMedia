@@ -12,6 +12,7 @@
 
 use hunch::hunch;
 use walkdir::WalkDir;
+use regex::Regex;
 
 pub struct ScanResult {
     pub title: Option<String>,
@@ -51,7 +52,7 @@ pub fn scan_directory(file_name: &str) -> ScanResult {
     };
 
     ScanResult {
-        title: result.title().map(|t| t.to_string()),
+        title: result.title().map(|t| clean_title(&t.to_lowercase())),
         season,
         episode,
         year,
@@ -80,4 +81,29 @@ pub fn remove_old_links(dir: &std::path::Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+
+
+
+fn clean_title(title: &str) -> String {
+    let mut t = title.to_lowercase();
+
+    // 1. enlever numéro au début (0894, 12, etc.)
+    let re_prefix = Regex::new(r"^\s*\d+\s*").unwrap();
+    t = re_prefix.replace(&t, "").to_string();
+
+    // 2. enlever sxxe incomplet ou complet (s02e, s02e05, s02e05v2)
+    let re_season = Regex::new(r"(?i)\bs\d{1,2}e\d{0,3}v?\d*\b").unwrap();
+    t = re_season.replace_all(&t, "").to_string();
+
+    // 3. enlever résidus "s02e" seuls (cas hunch cassé)
+    let re_broken = Regex::new(r"(?i)\bs\d{1,2}e\b").unwrap();
+    t = re_broken.replace_all(&t, "").to_string();
+
+    // 4. enlever doublons espaces
+    let re_spaces = Regex::new(r"\s+").unwrap();
+    t = re_spaces.replace_all(&t, " ").to_string();
+
+    t.trim().to_string()
 }
